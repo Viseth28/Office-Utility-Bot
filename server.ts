@@ -16,12 +16,31 @@ const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 app.use(cors());
-app.use(express.json());
 
 const botToken = process.env.TELEGRAM_BOT_TOKEN;
 const isProd = process.env.NODE_ENV === "production" || !!process.env.VERCEL;
 let bot: Telegraf | null = null;
 const webhookPath = `/api/telegram-webhook`;
+
+app.use(express.json());
+
+// Webhook handler - Using direct handleUpdate for better Serverless compatibility
+app.post(webhookPath, async (req, res) => {
+  console.log(`Webhook triggered: POST ${webhookPath}`);
+  try {
+    const initializedBot = getBot();
+    // express.json() has already parsed the body
+    await initializedBot.handleUpdate(req.body, res);
+    if (!res.writableEnded) {
+       res.sendStatus(200);
+    }
+  } catch (err: any) {
+    console.error("Webhook Update Error:", err);
+    if (!res.writableEnded) {
+      res.status(500).send("Bot update processing error");
+    }
+  }
+});
 
 interface LogEntry {
   id: string;
@@ -81,20 +100,15 @@ function getBot(): Telegraf {
   return bot;
 }
 
-// Webhook middleware wrapper to ensure bot is initialized
-app.use(webhookPath, (req, res, next) => {
-  try {
-    const initializedBot = getBot();
-    return initializedBot.webhookCallback(webhookPath)(req, res, next);
-  } catch (err: any) {
-    console.error("Bot initialization error during webhook:", err.message);
-    res.status(500).send(err.message);
-  }
-});
+// Webhook handler is now moved above express.json()
 
 function setupBot(bot: Telegraf) {
   bot.start((ctx) => {
     ctx.reply("Welcome! Send me your name (e.g., /viseth) to get your QR code, or send an amount in CNY (e.g., 100) to check the current exchange rate in KHR and USD.\n\nType /help for more details.");
+  });
+
+  bot.command('ping', (ctx) => {
+    ctx.reply('pong! Bot is alive and well on ' + (isProd ? 'Production' : 'Development'));
   });
 
   bot.help((ctx) => {
@@ -516,9 +530,7 @@ app.get("/api/test-bot", async (req, res) => {
 app.get("/api/set-webhook", async (req, res) => {
   try {
     const activeBot = getBot();
-    // VERCEL_URL is provided by Vercel, but it doesn't include https:// prefix
     const host = req.get('host') || "";
-    const cleanHost = host.split(':')[0];
     const protocol = req.headers['x-forwarded-proto'] || 'https';
     
     let hostUrl = "";
@@ -537,13 +549,14 @@ app.get("/api/set-webhook", async (req, res) => {
     console.log(`Setting webhook to: ${url}`);
     
     await activeBot.telegram.setWebhook(url, {
-      drop_pending_updates: true
+      drop_pending_updates: true,
+      allowed_updates: ["message", "callback_query"]
     });
     
     const info = await activeBot.telegram.getWebhookInfo();
     res.json({ 
       success: true, 
-      message: `Webhook bound to ${url}`,
+      message: `Webhook successfully bound to ${url}`,
       info 
     });
   } catch (e: any) {
