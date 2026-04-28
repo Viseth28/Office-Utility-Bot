@@ -21,6 +21,26 @@ const isProd = process.env.NODE_ENV === "production" || process.env.VERCEL;
 let bot: Telegraf | null = null;
 const webhookPath = `/api/telegram-webhook`;
 
+interface LogEntry {
+  id: string;
+  timestamp: number;
+  user: string;
+  command: string;
+  type: 'qr' | 'rate' | 'exchange';
+}
+const recentLogs: LogEntry[] = [];
+function logRequest(ctx: any, command: string, type: 'qr' | 'rate' | 'exchange') {
+  const user = ctx.from?.username ? `@${ctx.from.username}` : (ctx.from?.first_name || 'Unknown');
+  recentLogs.unshift({
+    id: Math.random().toString(36).substring(7),
+    timestamp: Date.now(),
+    user,
+    command,
+    type
+  });
+  if (recentLogs.length > 50) recentLogs.pop();
+}
+
 if (botToken) {
   bot = new Telegraf(botToken);
   
@@ -54,6 +74,7 @@ Need anything else? Just type a command!
   });
 
   bot.command('rate', async (ctx) => {
+    logRequest(ctx, '/rate', 'rate');
     try {
       const response = await axios.get("https://open.er-api.com/v6/latest/CNY");
       if (response.data && response.data.rates) {
@@ -72,6 +93,7 @@ Need anything else? Just type a command!
 
   bot.hears(/^\/([a-zA-Z0-9_\-]+)(?:@[a-zA-Z0-9_]+)?$/, async (ctx) => {
     const name = ctx.match[1].toLowerCase();
+    logRequest(ctx, `/${name}`, 'qr');
     const exts = ['.png', '.jpg', '.jpeg'];
     let qrPath = null;
     
@@ -119,6 +141,7 @@ Need anything else? Just type a command!
     const amount = parseFloat(text);
 
     if (!isNaN(amount) && text.match(/^\d+(\.\d+)?$/)) {
+      logRequest(ctx, text, 'exchange');
       try {
         const response = await axios.get("https://open.er-api.com/v6/latest/CNY");
         if (response.data && response.data.rates) {
@@ -197,6 +220,10 @@ app.get("/api/qrcodes", (req, res) => {
     }
   }
   res.json({ files });
+});
+
+app.get("/api/logs", (req, res) => {
+  res.json({ logs: recentLogs });
 });
 
 if (!isProd) {

@@ -3,11 +3,20 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 import { useEffect, useState } from "react";
-import { Copy, Check, Bot, Image as ImageIcon } from "lucide-react";
+import { Copy, Check, Bot, Image as ImageIcon, Activity } from "lucide-react";
+
+interface LogEntry {
+  id: string;
+  timestamp: number;
+  user: string;
+  command: string;
+  type: 'qr' | 'rate' | 'exchange';
+}
 
 export default function App() {
   const [status, setStatus] = useState<{ botTokenSet: boolean; status: string } | null>(null);
   const [qrCodes, setQrCodes] = useState<string[]>([]);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -20,6 +29,16 @@ export default function App() {
       .then((res) => res.json())
       .then((data) => setQrCodes(data.files || []))
       .catch((err) => console.error(err));
+
+    const fetchLogs = () => {
+      fetch("/api/logs")
+        .then((res) => res.json())
+        .then((data) => setLogs(data.logs || []))
+        .catch((err) => console.error(err));
+    };
+    fetchLogs();
+    const interval = setInterval(fetchLogs, 3000);
+    return () => clearInterval(interval);
   }, []);
 
   const copyFolder = () => {
@@ -145,13 +164,13 @@ export default function App() {
           </div>
           
           <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mb-4">Storage: /KHQR ({qrCodes.length} Files)</p>
-          <div className="space-y-3 flex-1">
+          <div className="space-y-3 flex-1 overflow-auto max-h-[300px] pr-2 custom-scrollbar">
              {qrCodes.length === 0 ? (
                <div className="p-6 bg-slate-800/30 rounded-2xl text-center border border-slate-700 border-dashed h-full flex flex-col items-center justify-center">
                  <p className="text-sm text-slate-400">No QR codes found. Use file explorer to upload images here.</p>
                </div>
              ) : (
-               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                  {qrCodes.map(code => (
                    <div key={code} className="flex items-center justify-between p-3 bg-slate-800/50 rounded-xl border border-slate-700/50">
                      <span className="text-sm text-slate-300 font-mono truncate mr-2">{code}</span>
@@ -160,6 +179,48 @@ export default function App() {
                  ))}
                </div>
              )}
+          </div>
+        </div>
+
+        {/* Recent Activity Panel */}
+        <div className="md:col-span-12 bg-slate-900 border border-slate-800 rounded-3xl p-8 flex flex-col">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-lg font-semibold flex items-center gap-2 text-white">
+              <Activity className="w-5 h-5 text-emerald-400" />
+              Recent Activity
+            </h2>
+            <span className="px-3 py-1 bg-slate-800 text-slate-400 border border-slate-700 rounded-full text-xs font-mono">Live Logs</span>
+          </div>
+          <div className="bg-slate-950 rounded-2xl border border-slate-800 p-4 min-h-[250px] max-h-[400px] overflow-y-auto custom-scrollbar">
+            {logs.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-slate-500 space-y-2">
+                <Activity className="w-8 h-8 opacity-20" />
+                <p className="text-sm">No recent activity detected.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {logs.map((log) => (
+                  <div key={log.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-slate-900/50 rounded-xl border border-slate-800/50 gap-2 sm:gap-4 transition-colors hover:bg-slate-800/50">
+                    <div className="flex items-center gap-3 w-full sm:w-auto overflow-hidden">
+                      <div className={`p-2 rounded-lg shrink-0 ${
+                        log.type === 'qr' ? 'bg-sky-500/10 text-sky-400' :
+                        log.type === 'exchange' ? 'bg-amber-500/10 text-amber-400' :
+                        'bg-purple-500/10 text-purple-400'
+                      }`}>
+                         {log.type === 'qr' ? <ImageIcon className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
+                      </div>
+                      <div className="truncate">
+                        <p className="text-sm font-medium text-slate-200 truncate">{log.user}</p>
+                        <p className="text-xs text-slate-500 truncate mt-0.5 font-mono">{log.command}</p>
+                      </div>
+                    </div>
+                    <div className="text-xs text-slate-500 font-mono shrink-0 sm:self-center self-end">
+                      {new Date(log.timestamp).toLocaleTimeString()}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
