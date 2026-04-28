@@ -17,13 +17,16 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-const botToken = process.env.TELEGRAM_BOT_TOKEN;
+const botToken = process.env.TELEGRAM_BOT_TOKEN || "8364240851:AAGs5TPBO-A8kZu5k-QNu9648PYrLLdptCg";
 const isProd = process.env.NODE_ENV === "production" || process.env.VERCEL;
 let bot: Telegraf | null = null;
 const webhookPath = `/api/telegram-webhook`;
 
 if (botToken) {
   bot = new Telegraf(botToken);
+  
+  // ALWAYS mount the webhook middleware so manual webhooks work everywhere
+  app.use(bot.webhookCallback(webhookPath));
 
   bot.start((ctx) => {
     ctx.reply("Welcome! Send me your name (e.g., /viseth) to get your QR code, or send an amount in CNY (e.g., 100) to check the current exchange rate in KHR and USD.\n\nType /help for more details.");
@@ -120,13 +123,19 @@ Need anything else? Just type a command!
   const appUrl = process.env.APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null);
 
   if (isProd) {
-    app.use(bot.webhookCallback(webhookPath));
     if (appUrl) {
       bot.telegram.setWebhook(`${appUrl}${webhookPath}`).catch(console.error);
     }
   } else {
-    bot.telegram.deleteWebhook().then(() => {
-      bot!.launch().catch(e => console.error("Bot launch failed:", e));
+    // In dev, clear webhook before polling to avoid 409 conflict
+    bot.telegram.deleteWebhook({ drop_pending_updates: true }).then(() => {
+      bot!.launch().catch(e => {
+        if (e.response && e.response.error_code === 409) {
+          console.log("Polling failed with 409 because a webhook is actively set. Your webhook will handle requests instead.");
+        } else {
+          console.error("Bot launch failed:", e);
+        }
+      });
     }).catch(console.error);
     process.once("SIGINT", () => bot?.stop("SIGINT"));
     process.once("SIGTERM", () => bot?.stop("SIGTERM"));
