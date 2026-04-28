@@ -56,12 +56,30 @@ export default function App() {
             <span className="text-slate-400 text-xs font-semibold uppercase tracking-widest">Bot Status</span>
           </div>
           <div className={`p-4 rounded-xl border ${status?.botTokenSet ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-red-500/10 border-red-500/30'} flex-1 flex flex-col justify-center`}>
-             <h3 className={`font-mono text-lg ${status?.botTokenSet ? 'text-emerald-400' : 'text-red-400'}`}>
-               {status?.botTokenSet ? 'Token Set' : 'Missing Token'}
-             </h3>
-             <p className={`text-xs mt-1 ${status?.botTokenSet ? 'text-emerald-500/70' : 'text-red-500/70'}`}>
+             <div className="flex justify-between items-center">
+               <h3 className={`font-mono text-lg ${status?.botTokenSet ? 'text-emerald-400' : 'text-red-400'}`}>
+                 {status?.botTokenSet ? 'Token Set' : 'Missing Token'}
+               </h3>
+               {status?.botTokenSet && (
+                 <button
+                   onClick={async () => {
+                     try {
+                       const res = await fetch("/api/set-webhook");
+                       const text = await res.text();
+                       alert(text);
+                     } catch (e) {
+                       alert("Failed to sync webhook");
+                     }
+                   }}
+                   className="text-[10px] uppercase font-bold bg-slate-800 text-sky-400 border border-slate-700 px-2 py-1 rounded hover:bg-slate-700 transition"
+                 >
+                   Sync Webhook
+                 </button>
+               )}
+             </div>
+             <p className={`text-xs mt-2 ${status?.botTokenSet ? 'text-emerald-500/70' : 'text-red-500/70'}`}>
                {status?.botTokenSet 
-                  ? 'Bot is running and listening.' 
+                  ? 'Bot is running. If deployed to Vercel, click Sync Webhook to bind.' 
                   : 'Add TELEGRAM_BOT_TOKEN to Secrets.'}
              </p>
           </div>
