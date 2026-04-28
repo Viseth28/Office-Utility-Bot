@@ -73,6 +73,7 @@ export default function App() {
       .then((data) => {
          if (data.success) {
            setWebhookResult(data.message);
+           fetchStatus(); // Refresh status after success
          } else {
            setWebhookResult("Failed: " + data.error);
          }

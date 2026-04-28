@@ -24,21 +24,29 @@ const webhookPath = `/api/telegram-webhook`;
 
 app.use(express.json());
 
-// Webhook handler - Using direct handleUpdate for better Serverless compatibility
+// Webhook handler - Optimized for Vercel Serverless
 app.post(webhookPath, async (req, res) => {
-  console.log(`Webhook triggered: POST ${webhookPath}`);
-  console.log("Update Type:", req.body ? Object.keys(req.body)[1] || "unknown" : "no body");
+  const updateId = req.body?.update_id;
+  console.log(`[TELEGRAM] Webhook received. ID: ${updateId}`);
+  
+  if (!req.body) {
+    console.error("[TELEGRAM] Error: Empty body received.");
+    return res.status(400).send("Empty body");
+  }
+
   try {
     const initializedBot = getBot();
-    // express.json() has already parsed the body
-    await initializedBot.handleUpdate(req.body, res);
+    // Pass the update to Telegraf. 
+    // We handle the response manually to ensure Vercel/Express compatibility.
+    await initializedBot.handleUpdate(req.body);
+    
     if (!res.writableEnded) {
-       res.sendStatus(200);
+       res.status(200).send("OK");
     }
   } catch (err: any) {
-    console.error("Webhook Update Error:", err);
+    console.error(`[TELEGRAM] Update processing failed (ID: ${updateId}):`, err.message);
     if (!res.writableEnded) {
-      res.status(500).send("Bot update processing error");
+      res.status(500).send("Update failed");
     }
   }
 });
@@ -95,8 +103,16 @@ function getBot(): Telegraf {
     throw new Error("TELEGRAM_BOT_TOKEN is missing. Please add it to your environment variables.");
   }
   if (!bot) {
+    console.log("[BOT] Initializing new Telegraf instance...");
     bot = new Telegraf(botToken);
+    
+    // Add global error handler
+    bot.catch((err: any, ctx) => {
+      console.error(`[BOT_CAUGHT_ERROR] Error in ${ctx.updateType}:`, err);
+    });
+
     setupBot(bot);
+    console.log("[BOT] Setup completed.");
   }
   return bot;
 }
@@ -104,12 +120,21 @@ function getBot(): Telegraf {
 // Webhook handler is now moved above express.json()
 
 function setupBot(bot: Telegraf) {
+  bot.use(async (ctx, next) => {
+    console.log(`[BOT_UPDATE] Processing update_id: ${ctx.update.update_id} (${ctx.updateType})`);
+    return next();
+  });
+
   bot.start((ctx) => {
     ctx.reply("Welcome! Send me your name (e.g., /viseth) to get your QR code, or send an amount in CNY (e.g., 100) to check the current exchange rate in KHR and USD.\n\nType /help for more details.");
   });
 
   bot.command('ping', (ctx) => {
     ctx.reply('pong! Bot is alive and well on ' + (isProd ? 'Production' : 'Development'));
+  });
+
+  bot.command('debug', (ctx) => {
+    ctx.reply(`Bot Debug Info:\n- Environment: ${isProd ? 'Production' : 'Development'}\n- Webhook Configured: ${isProd ? 'Yes' : 'No'}\n- Process Memory: ${JSON.stringify(process.memoryUsage())}`);
   });
 
   bot.help((ctx) => {
