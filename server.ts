@@ -45,12 +45,32 @@ Send a slash \`/\` followed by a registered name to get their KHQR code.
 Send any number to fetch live exchange rates and convert it from Chinese Yuan (CNY) to US Dollars (USD) and Cambodian Riel (KHR).
 *Example:* \`102\`
 
+📈 *3. Realtime Exchange Rate*
+Use the \`/rate\` command to view the live exchange rate for 1 CNY to USD and KHR.
+
 Need anything else? Just type a command!
     `;
     ctx.replyWithMarkdown(helpMessage);
   });
 
-  bot.hears(/^\/([a-zA-Z0-9_\-]+)$/, async (ctx) => {
+  bot.command('rate', async (ctx) => {
+    try {
+      const response = await axios.get("https://open.er-api.com/v6/latest/CNY");
+      if (response.data && response.data.rates) {
+        const rateUSD = response.data.rates.USD;
+        const rateKHR = response.data.rates.KHR;
+
+        ctx.reply(`📊 *Current Exchange Rates* 📊\n\n1 CNY 🇨🇳 = ${rateUSD.toFixed(4)} USD 💵\n1 CNY 🇨🇳 = ${rateKHR.toLocaleString()} KHR ៛\n\n(Rates updated dynamically)`, { parse_mode: 'Markdown' });
+      } else {
+        ctx.reply("Sorry, I couldn't fetch exchange rates right now.");
+      }
+    } catch (error) {
+      console.error("Error fetching exchange rates:", error);
+      ctx.reply("Error connecting to the exchange rate service.");
+    }
+  });
+
+  bot.hears(/^\/([a-zA-Z0-9_\-]+)(?:@[a-zA-Z0-9_]+)?$/, async (ctx) => {
     const name = ctx.match[1].toLowerCase();
     const exts = ['.png', '.jpg', '.jpeg'];
     let qrPath = null;
@@ -106,9 +126,13 @@ Need anything else? Just type a command!
           const rateKHR = response.data.rates.KHR;
 
           const convertedUSD = (amount * rateUSD).toFixed(2);
-          const convertedKHR = (amount * rateKHR).toLocaleString();
+          const convertedKHR = (amount * rateKHR).toLocaleString(undefined, { maximumFractionDigits: 3 });
 
-          ctx.reply(`${amount} CNY 🇨🇳 is approximately:\n\n💵 ${convertedUSD} USD\n៛ ${convertedKHR} KHR\n\n(Rates updated dynamically)`);
+          const amountPlus3 = amount * 1.03;
+          const convertedUSDPlus3 = (amountPlus3 * rateUSD).toFixed(2);
+          const convertedKHRPlus3 = (amountPlus3 * rateKHR).toLocaleString(undefined, { maximumFractionDigits: 3 });
+
+          ctx.reply(`🇨🇳 ${amount} *CNY* is approximately:\n🇺🇸 ${convertedUSD} *USD*\n🇰🇭 ${convertedKHR} *KHR*\n\n+3% on PDD\n🇺🇸 ${convertedUSDPlus3} *USD*\n🇰🇭 ${convertedKHRPlus3} *KHR*`, { parse_mode: 'Markdown' });
         } else {
           ctx.reply("Sorry, I couldn't fetch exchange rates right now.");
         }
