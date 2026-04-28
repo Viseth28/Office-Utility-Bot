@@ -78,9 +78,20 @@ async function startServer() {
       }
     });
 
-    // For Dev/Testing, use polling
-    // For Vercel production it's better to configure webhooks, but this supports local and simple deployments.
-    bot.launch().catch(e => console.error("Bot launch failed (maybe no token or duplicate instance):", e));
+    const appUrl = process.env.APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null);
+
+    if (appUrl && process.env.NODE_ENV === "production") {
+      const webhookPath = `/api/telegram-webhook`;
+      // We must tell Telegram to send updates to this URL
+      bot.telegram.setWebhook(`${appUrl}${webhookPath}`);
+      // Mount the webhook middleware to Express
+      app.use(bot.webhookCallback(webhookPath));
+      console.log(`Telegram Webhook configured at ${appUrl}${webhookPath}`);
+    } else {
+      // For Dev/Testing or local, use polling
+      bot.launch().catch(e => console.error("Bot launch failed (maybe no token or duplicate instance):", e));
+      console.log("Telegram bot started in polling mode.");
+    }
     
     // Enable graceful stop
     process.once("SIGINT", () => bot?.stop("SIGINT"));
