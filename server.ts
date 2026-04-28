@@ -33,10 +33,17 @@ async function startServer() {
     bot.hears(/^\/([a-zA-Z0-9_\-]+)$/, async (ctx) => {
       const name = ctx.match[1].toLowerCase();
       
-      // Look for the image in the public/KHQR directory
-      const qrPath = path.join(process.cwd(), "public", "KHQR", `${name}.png`);
+      const exts = ['.png', '.jpg', '.jpeg'];
+      let qrPath = null;
+      for (const ext of exts) {
+        const p = path.join(process.cwd(), "public", "KHQR", `${name}${ext}`);
+        if (fs.existsSync(p)) {
+          qrPath = p;
+          break;
+        }
+      }
       
-      if (fs.existsSync(qrPath)) {
+      if (qrPath) {
         try {
           await ctx.replyWithPhoto({ source: fs.createReadStream(qrPath) });
         } catch (error) {
@@ -114,7 +121,7 @@ async function startServer() {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    const files = fs.readdirSync(dir).filter(f => f.endsWith('.png'));
+    const files = fs.readdirSync(dir).filter(f => f.match(/\.(png|jpg|jpeg)$/i));
     res.json({ files });
   });
 
