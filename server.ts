@@ -501,11 +501,11 @@ _(Rates cached for 10 mins)_
         ctx.reply("Sorry, there was an error sending your QR code.");
       }
     } else {
-      // Fallback for Vercel Static deployment where fs fails
-      const vercelUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null;
-      if (vercelUrl) {
+      // Fallback for Vercel/Netlify Static deployment where fs fails
+      const siteUrl = process.env.APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : (process.env.URL ? process.env.URL : null));
+      if (siteUrl) {
         try {
-          await ctx.replyWithPhoto({ url: `${vercelUrl}/KHQR/${name}.jpg` });
+          await ctx.replyWithPhoto({ url: `${siteUrl}/KHQR/${name}.jpg` });
         } catch (e) {
           ctx.reply(`Sorry, no QR code found for /${name}.`);
         }
@@ -681,7 +681,7 @@ if (!isProd) {
     res.sendFile(path.join(distPath, "index.html"));
   });
 
-  if (!process.env.VERCEL) {
+  if (!process.env.VERCEL && !process.env.NETLIFY) {
     app.listen(PORT, "0.0.0.0", () => {
       console.log(`Production Server running on port ${PORT}`);
     });
