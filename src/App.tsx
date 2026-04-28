@@ -3,28 +3,32 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 import { useEffect, useState } from "react";
-import { Copy, Check, Bot, Image as ImageIcon, Activity } from "lucide-react";
+import { Copy, Check, Bot, Image as ImageIcon, Activity, QrCode } from "lucide-react";
 
 interface LogEntry {
   id: string;
   timestamp: number;
   user: string;
   command: string;
-  type: 'qr' | 'rate' | 'exchange';
+  type: 'qr' | 'rate' | 'exchange' | 'pdf' | 'qr_gen';
 }
 
 export default function App() {
-  const [status, setStatus] = useState<{ botTokenSet: boolean; status: string } | null>(null);
+  const [status, setStatus] = useState<{ botTokenSet: boolean; status: string; isProd?: boolean } | null>(null);
   const [qrCodes, setQrCodes] = useState<string[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [copied, setCopied] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
 
-  useEffect(() => {
+  const fetchStatus = () => {
     fetch("/api/status")
       .then((res) => res.json())
       .then((data) => setStatus(data))
       .catch(() => {});
+  };
 
+  useEffect(() => {
+    fetchStatus();
     fetch("/api/qrcodes")
       .then((res) => res.json())
       .then((data) => setQrCodes(data.files || []))
@@ -40,6 +44,18 @@ export default function App() {
     const interval = setInterval(fetchLogs, 3000);
     return () => clearInterval(interval);
   }, []);
+
+  const resetBot = () => {
+    setIsResetting(true);
+    fetch("/api/reset-bot")
+      .then((res) => res.text())
+      .then((msg) => {
+        alert(msg);
+        fetchStatus();
+      })
+      .catch((err) => alert("Error: " + err.message))
+      .finally(() => setIsResetting(false));
+  };
 
   const copyFolder = () => {
     navigator.clipboard.writeText("public/KHQR/");
@@ -138,6 +154,23 @@ export default function App() {
                 <p className="text-xs sm:text-sm font-medium">Calculates exchange rate from CNY to KHR and USD.</p>
               </div>
             </div>
+            
+            <div className="flex justify-end pt-4 border-t border-slate-800 mt-4">
+              <div className="bg-sky-600 text-white rounded-2xl rounded-tr-none px-4 py-3 max-w-[80%] shadow-md">
+                <p className="text-sm font-mono">/qr google.com</p>
+              </div>
+            </div>
+            <div className="flex justify-start">
+              <div className="bg-slate-800 text-slate-100 border border-slate-700 rounded-2xl rounded-tl-none p-4 max-w-[90%] shadow-md">
+                <p className="text-xs text-slate-400 mb-1 font-bold text-emerald-400">QR Generator ✨</p>
+                <div className="bg-white p-2 rounded-lg inline-block mb-2">
+                   <div className="w-24 h-24 sm:w-32 sm:h-32 bg-slate-200 border-4 border-slate-300 flex items-center justify-center text-slate-400">
+                     <QrCode className="w-8 h-8 sm:w-12 sm:h-12" />
+                   </div>
+                </div>
+                <p className="text-xs sm:text-sm font-medium">Instantly creates a QR code image for any link or text provided.</p>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -189,7 +222,19 @@ export default function App() {
               <Activity className="w-5 h-5 text-emerald-400" />
               Recent Activity
             </h2>
-            <span className="px-3 py-1 bg-slate-800 text-slate-400 border border-slate-700 rounded-full text-xs font-mono">Live Logs</span>
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={resetBot}
+                disabled={isResetting}
+                className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-400 border border-slate-700 rounded-full text-xs font-medium flex items-center gap-1.5 transition-colors disabled:opacity-50"
+              >
+                <Activity className={`w-3 h-3 ${isResetting ? 'animate-spin' : ''}`} />
+                {isResetting ? 'Resetting...' : 'Reset Bot Connection'}
+              </button>
+              <span className="px-3 py-1 bg-slate-800 text-slate-400 border border-slate-700 rounded-full text-xs font-mono">
+                {status?.isProd ? 'Webhook Mode' : 'Polling Mode'}
+              </span>
+            </div>
           </div>
           <div className="bg-slate-950 rounded-2xl border border-slate-800 p-4 min-h-[250px] max-h-[400px] overflow-y-auto custom-scrollbar">
             {logs.length === 0 ? (
@@ -204,10 +249,16 @@ export default function App() {
                     <div className="flex items-center gap-3 w-full sm:w-auto overflow-hidden">
                       <div className={`p-2 rounded-lg shrink-0 ${
                         log.type === 'qr' ? 'bg-sky-500/10 text-sky-400' :
+                        log.type === 'qr_gen' ? 'bg-emerald-500/10 text-emerald-400' :
                         log.type === 'exchange' ? 'bg-amber-500/10 text-amber-400' :
+                        log.type === 'rate' ? 'bg-blue-500/10 text-blue-400' :
                         'bg-purple-500/10 text-purple-400'
                       }`}>
-                         {log.type === 'qr' ? <ImageIcon className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
+                         {log.type === 'qr' ? <ImageIcon className="w-4 h-4" /> : 
+                          log.type === 'qr_gen' ? <QrCode className="w-4 h-4 text-emerald-400" /> :
+                          log.type === 'exchange' ? <Bot className="w-4 h-4 text-amber-400" /> :
+                          log.type === 'rate' ? <Bot className="w-4 h-4 text-blue-400" /> :
+                          <Activity className="w-4 h-4 text-purple-400" />}
                       </div>
                       <div className="truncate">
                         <p className="text-sm font-medium text-slate-200 truncate">{log.user}</p>

@@ -1,6 +1,6 @@
 {
-  "name": "Telegram Exchange & QR Bot",
-  "description": "Telegram bot for QR code retrieval and CNY exchange rates",
+  "name": "Smart Utility Bot",
+  "description": "A multi-functional Telegram bot featuring dynamic QR code generation, image-to-PDF conversion, live currency exchange (CNY/USD/KHR), and automated KHQR retrieval.",
   "requestFramePermissions": [],
   "majorCapabilities": []
 }
