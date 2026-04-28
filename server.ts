@@ -1,5 +1,4 @@
 import express from "express";
-import { createServer as createViteServer } from "vite";
 import { Telegraf } from "telegraf";
 import axios from "axios";
 import path from "path";
@@ -178,6 +177,7 @@ app.get("/api/qrcodes", (req, res) => {
 
 if (!isProd) {
   (async () => {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
