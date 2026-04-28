@@ -27,6 +27,7 @@ app.use(express.json());
 // Webhook handler - Using direct handleUpdate for better Serverless compatibility
 app.post(webhookPath, async (req, res) => {
   console.log(`Webhook triggered: POST ${webhookPath}`);
+  console.log("Update Type:", req.body ? Object.keys(req.body)[1] || "unknown" : "no body");
   try {
     const initializedBot = getBot();
     // express.json() has already parsed the body
@@ -590,8 +591,21 @@ app.get("/api/reset-bot", async (req, res) => {
 // Fallback list for Vercel where fs.readdirSync might fail on public/dist folders
 const FALLBACK_QR_NAMES = ["viseth", "chhenghak", "chhuney", "g1", "glenn", "heng", "limey", "litchi", "pien"];
 
-app.get("/api/status", (req, res) => {
-  res.json({ botTokenSet: !!botToken, status: "Running", isProd });
+app.get("/api/status", async (req, res) => {
+  let webhookInfo = null;
+  if (botToken) {
+    try {
+      webhookInfo = await getBot().telegram.getWebhookInfo();
+    } catch (e) {
+      console.error("Error fetching webhook info:", e);
+    }
+  }
+  res.json({ 
+    botTokenSet: !!botToken, 
+    status: "Running", 
+    isProd, 
+    webhook: webhookInfo 
+  });
 });
 
 app.get("/api/qrcodes", (req, res) => {

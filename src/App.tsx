@@ -143,18 +143,35 @@ export default function App() {
                   </div>
                 )}
                 {status?.isProd && (
-                  <button 
-                    onClick={setWebhook}
-                    disabled={isResetting}
-                    className="w-full bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white text-xs font-bold py-2.5 rounded-xl transition-all shadow-lg shadow-sky-900/20 flex items-center justify-center gap-2"
-                  >
-                    {isResetting ? 'Processing...' : (
-                      <>
-                        <QrCode className="w-3 h-3" />
-                        Set Webhook
-                      </>
+                  <>
+                    {status?.webhook?.url ? (
+                      <div className="p-2 bg-slate-800/50 rounded-lg border border-slate-700/50 mb-2 overflow-hidden">
+                        <p className="text-[9px] text-slate-400 font-mono flex items-center gap-1.5 mb-1">
+                          <Activity className="w-2.5 h-2.5 text-emerald-400" />
+                          Webhook URL:
+                        </p>
+                        <p className="text-[8px] font-mono text-slate-300 break-all leading-tight italic truncate">
+                           {status.webhook.url}
+                        </p>
+                      </div>
+                    ) : status?.botTokenSet && (
+                      <div className="p-2 bg-amber-500/10 border border-amber-500/30 rounded-lg mb-2">
+                        <p className="text-[10px] text-amber-400 font-medium">⚠️ No Webhook Active</p>
+                      </div>
                     )}
-                  </button>
+                    <button 
+                      onClick={setWebhook}
+                      disabled={isResetting}
+                      className="w-full bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white text-xs font-bold py-2.5 rounded-xl transition-all shadow-lg shadow-sky-900/20 flex items-center justify-center gap-2"
+                    >
+                      {isResetting ? 'Processing...' : (
+                        <>
+                          <QrCode className="w-3 h-3" />
+                          Set Webhook
+                        </>
+                      )}
+                    </button>
+                  </>
                 )}
                 <button 
                   onClick={resetBot}
