@@ -502,19 +502,53 @@ if (isProd) {
   }
 }
 
+app.get("/api/test-bot", async (req, res) => {
+  try {
+    const activeBot = getBot();
+    const me = await activeBot.telegram.getMe();
+    res.json({ success: true, bot: me });
+  } catch (e: any) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 // User-executable webhook bind (Prod only)
 app.get("/api/set-webhook", async (req, res) => {
   try {
     const activeBot = getBot();
+    // VERCEL_URL is provided by Vercel, but it doesn't include https:// prefix
     const host = req.get('host') || "";
     const cleanHost = host.split(':')[0];
-    const hostUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : `https://${cleanHost}`;
+    const protocol = req.headers['x-forwarded-proto'] || 'https';
+    
+    let hostUrl = "";
+    if (process.env.APP_URL) {
+      hostUrl = process.env.APP_URL;
+    } else if (process.env.VERCEL_URL) {
+      hostUrl = `https://${process.env.VERCEL_URL}`;
+    } else {
+      hostUrl = `${protocol}://${host}`;
+    }
+    
+    // Ensure no trailing slash
+    hostUrl = hostUrl.replace(/\/$/, "");
     
     const url = `${hostUrl}${webhookPath}`;
-    await activeBot.telegram.setWebhook(url);
-    res.send(`SUCCESS: Webhook bound to ${url}.`);
+    console.log(`Setting webhook to: ${url}`);
+    
+    await activeBot.telegram.setWebhook(url, {
+      drop_pending_updates: true
+    });
+    
+    const info = await activeBot.telegram.getWebhookInfo();
+    res.json({ 
+      success: true, 
+      message: `Webhook bound to ${url}`,
+      info 
+    });
   } catch (e: any) {
-    res.status(500).send(`FAILED: ${e.message}`);
+    console.error("Webhook set failed:", e);
+    res.status(500).json({ success: false, error: e.message });
   }
 });
 

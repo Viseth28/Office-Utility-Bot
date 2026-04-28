@@ -20,12 +20,21 @@ export default function App() {
   const [copied, setCopied] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const [webhookResult, setWebhookResult] = useState<string | null>(null);
+  const [testResult, setTestResult] = useState<{success: boolean, bot?: any, error?: string} | null>(null);
 
   const fetchStatus = () => {
     fetch("/api/status")
       .then((res) => res.json())
       .then((data) => setStatus(data))
       .catch(() => {});
+  };
+
+  const testBot = () => {
+    setTestResult(null);
+    fetch("/api/test-bot")
+      .then(res => res.json())
+      .then(data => setTestResult(data))
+      .catch(err => setTestResult({ success: false, error: err.message }));
   };
 
   useEffect(() => {
@@ -60,8 +69,14 @@ export default function App() {
     setIsResetting(true);
     setWebhookResult(null);
     fetch("/api/set-webhook")
-      .then((res) => res.text())
-      .then((msg) => setWebhookResult(msg))
+      .then((res) => res.json())
+      .then((data) => {
+         if (data.success) {
+           setWebhookResult(data.message);
+         } else {
+           setWebhookResult("Failed: " + data.error);
+         }
+      })
       .catch((err) => setWebhookResult("Error: " + err.message))
       .finally(() => setIsResetting(false));
   };
@@ -114,6 +129,19 @@ export default function App() {
              </div>
 
              <div className="space-y-2">
+                {status?.botTokenSet && (
+                  <button 
+                    onClick={testBot}
+                    className="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold py-1.5 rounded-lg transition-all flex items-center justify-center gap-1.5"
+                  >
+                    Test Connection
+                  </button>
+                )}
+                {testResult && (
+                  <div className={`p-2 rounded-lg text-[9px] font-mono mb-2 ${testResult.success ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
+                    {testResult.success ? `Connected: @${testResult.bot.username}` : `Error: ${testResult.error}`}
+                  </div>
+                )}
                 {status?.isProd && (
                   <button 
                     onClick={setWebhook}
