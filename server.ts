@@ -48,6 +48,27 @@ function logRequest(ctx: any, command: string, type: 'qr' | 'rate' | 'exchange' 
 const pdfSessions = new Map<number, { fileIds: string[], timer?: NodeJS.Timeout }>();
 const mediaGroups = new Map<string, { fileIds: string[], timer?: NodeJS.Timeout }>();
 
+// Currency Cache
+let cachedRates: { rates: any, timestamp: number } | null = null;
+const CACHE_DURATION = 10 * 60 * 1000; // 10 minutes
+
+async function getExchangeRates() {
+  if (cachedRates && (Date.now() - cachedRates.timestamp < CACHE_DURATION)) {
+    return cachedRates.rates;
+  }
+  try {
+    const response = await axios.get("https://open.er-api.com/v6/latest/CNY", { timeout: 5000 });
+    if (response.data && response.data.rates) {
+      cachedRates = { rates: response.data.rates, timestamp: Date.now() };
+      return response.data.rates;
+    }
+    throw new Error("Invalid response from exchange service");
+  } catch (error) {
+    console.error("Exchange Rate Error:", error);
+    return cachedRates ? cachedRates.rates : null; // Fallback to stale if available
+  }
+}
+
 // Lazy Bot Initialization
 function getBot(): Telegraf {
   if (!botToken) {
@@ -285,12 +306,20 @@ Need anything else? Just type a command!
       let allNames: string[] = [];
       for (const dir of dirs) {
         if (fs.existsSync(dir)) {
-          const files = fs.readdirSync(dir);
-          const names = files
-            .filter(f => !f.startsWith('.') && f !== 'README.md')
-            .map(f => path.parse(f).name);
-          allNames = [...allNames, ...names];
+          try {
+            const files = fs.readdirSync(dir);
+            const names = files
+              .filter(f => !f.startsWith('.') && f !== 'README.md')
+              .map(f => path.parse(f).name);
+            allNames = [...allNames, ...names];
+          } catch (e) {
+            console.warn("Dir read failed, using fallbacks");
+          }
         }
+      }
+      
+      if (allNames.length === 0) {
+        allNames = FALLBACK_QR_NAMES;
       }
       
       const uniqueNames = Array.from(new Set(allNames));
@@ -340,17 +369,16 @@ Need anything else? Just type a command!
 
   async function handleRateRequest(ctx: any) {
     try {
-      const response = await axios.get("https://open.er-api.com/v6/latest/CNY");
-      if (response.data && response.data.rates) {
-        const rateUSD = response.data.rates.USD;
-        const rateKHR = response.data.rates.KHR;
-        ctx.reply(`📊 *Current Exchange Rates* 📊\n\n1 CNY 🇨🇳 = ${rateUSD.toFixed(4)} USD 💵\n1 CNY 🇨🇳 = ${rateKHR.toLocaleString()} KHR ៛\n\n(Rates updated dynamically)`, { parse_mode: 'Markdown' });
+      const rates = await getExchangeRates();
+      if (rates) {
+        const rateUSD = rates.USD;
+        const rateKHR = rates.KHR;
+        ctx.reply(`📊 *Current Exchange Rates* 📊\n\n1 CNY 🇨🇳 = ${rateUSD.toFixed(4)} USD 💵\n1 CNY 🇨🇳 = ${rateKHR.toLocaleString()} KHR ៛\n\n(Rates updated every 10 mins)`, { parse_mode: 'Markdown' });
       } else {
-        ctx.reply("Sorry, I couldn't fetch exchange rates right now.");
+        ctx.reply("⚠️ Sorry, I couldn't fetch exchange rates right now. Please try again later.");
       }
     } catch (error) {
-      console.error("Error fetching exchange rates:", error);
-      ctx.reply("Error connecting to the exchange rate service.");
+      ctx.reply("❌ Error connecting to the exchange rate service.");
     }
   }
 
@@ -358,27 +386,46 @@ Need anything else? Just type a command!
   bot.hears(/^(?:\/)?(\d+(?:\.\d+)?)(?:\s*@[a-zA-Z0-9_]+)?$/, async (ctx) => {
     const text = ctx.match[1];
     const amount = parseFloat(text);
+    
+    // Protection against crazy numbers
+    if (amount > 10000000) {
+      return ctx.reply("⚠️ That amount is too high for me to process.");
+    }
+
     logRequest(ctx, text, 'exchange');
     try {
-      const response = await axios.get("https://open.er-api.com/v6/latest/CNY");
-      if (response.data && response.data.rates) {
-        const rateUSD = response.data.rates.USD;
-        const rateKHR = response.data.rates.KHR;
+      const rates = await getExchangeRates();
+      if (rates) {
+        const rateUSD = rates.USD;
+        const rateKHR = rates.KHR;
 
         const convertedUSD = (amount * rateUSD).toFixed(2);
-        const convertedKHR = (amount * rateKHR).toLocaleString(undefined, { maximumFractionDigits: 3 });
+        const convertedKHR = Math.round(amount * rateKHR).toLocaleString();
 
         const amountPlus3 = amount * 1.03;
         const convertedUSDPlus3 = (amountPlus3 * rateUSD).toFixed(2);
-        const convertedKHRPlus3 = (amountPlus3 * rateKHR).toLocaleString(undefined, { maximumFractionDigits: 3 });
+        const convertedKHRPlus3 = Math.round(amountPlus3 * rateKHR).toLocaleString();
 
-        ctx.reply(`🇨🇳 ${amount} *CNY* is approximately:\n🇺🇸 ${convertedUSD} *USD*\n🇰🇭 ${convertedKHR} *KHR*\n\n+3% on PDD\n🇺🇸 ${convertedUSDPlus3} *USD*\n🇰🇭 ${convertedKHRPlus3} *KHR*`, { parse_mode: 'Markdown' });
+        const response = `
+💰 *Calculation for ${amount.toLocaleString()} CNY*
+
+💵 *Standard Rate:*
+  • USD: **$${convertedUSD}**
+  • KHR: **៛${convertedKHR}**
+
+✨ *+3% (PDD/Fees) Rate:*
+  • USD: **$${convertedUSDPlus3}**
+  • KHR: **៛${convertedKHRPlus3}**
+
+_(Rates cached for 10 mins)_
+        `.trim();
+
+        ctx.reply(response, { parse_mode: 'Markdown' });
       } else {
-        ctx.reply("Sorry, I couldn't fetch exchange rates right now.");
+        ctx.reply("⚠️ Exchange service unavailable.");
       }
     } catch (error) {
-      console.error("Error fetching exchange rates:", error);
-      ctx.reply("Error connecting to the exchange rate service.");
+      ctx.reply("❌ Error processing exchange.");
     }
   });
 
@@ -493,6 +540,9 @@ app.get("/api/reset-bot", async (req, res) => {
   }
 });
 
+// Fallback list for Vercel where fs.readdirSync might fail on public/dist folders
+const FALLBACK_QR_NAMES = ["viseth", "chhenghak", "chhuney", "g1", "glenn", "heng", "limey", "litchi", "pien"];
+
 app.get("/api/status", (req, res) => {
   res.json({ botTokenSet: !!botToken, status: "Running", isProd });
 });
@@ -505,10 +555,20 @@ app.get("/api/qrcodes", (req, res) => {
   let files: string[] = [];
   for (const dir of dirs) {
     if (fs.existsSync(dir)) {
-      files = fs.readdirSync(dir).filter(f => f.match(/\.(png|jpg|jpeg)$/i));
-      break;
+      try {
+        files = fs.readdirSync(dir).filter(f => f.match(/\.(png|jpg|jpeg)$/i));
+        if (files.length > 0) break;
+      } catch (e) {
+        // ignore
+      }
     }
   }
+  
+  if (files.length === 0) {
+    // Return extensions as well for UI compatibility if it expects full names
+    files = FALLBACK_QR_NAMES.map(n => `${n}.jpg`);
+  }
+  
   res.json({ files });
 });
 

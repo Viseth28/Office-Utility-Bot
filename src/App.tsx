@@ -19,6 +19,7 @@ export default function App() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [copied, setCopied] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
+  const [webhookResult, setWebhookResult] = useState<string | null>(null);
 
   const fetchStatus = () => {
     fetch("/api/status")
@@ -47,13 +48,21 @@ export default function App() {
 
   const resetBot = () => {
     setIsResetting(true);
+    setWebhookResult(null);
     fetch("/api/reset-bot")
       .then((res) => res.text())
-      .then((msg) => {
-        alert(msg);
-        fetchStatus();
-      })
-      .catch((err) => alert("Error: " + err.message))
+      .then((msg) => setWebhookResult(msg))
+      .catch((err) => setWebhookResult("Error: " + err.message))
+      .finally(() => setIsResetting(false));
+  };
+
+  const setWebhook = () => {
+    setIsResetting(true);
+    setWebhookResult(null);
+    fetch("/api/set-webhook")
+      .then((res) => res.text())
+      .then((msg) => setWebhookResult(msg))
+      .catch((err) => setWebhookResult("Error: " + err.message))
       .finally(() => setIsResetting(false));
   };
 
@@ -86,37 +95,54 @@ export default function App() {
 
         {/* Host Stats */}
         <div className="md:col-span-4 bg-slate-900 border border-slate-800 rounded-3xl p-6 flex flex-col justify-center">
-          <div className="flex items-center gap-3 mb-2">
-            <Bot className="w-5 h-5 text-white" />
-            <span className="text-slate-400 text-xs font-semibold uppercase tracking-widest">Bot Status</span>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <Bot className="w-5 h-5 text-white" />
+              <span className="text-slate-400 text-xs font-semibold uppercase tracking-widest">Bot Status</span>
+            </div>
+            <div className={`w-2 h-2 rounded-full animate-pulse ${status?.botTokenSet ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]' : 'bg-red-400'}`} />
           </div>
-          <div className={`p-4 rounded-xl border ${status?.botTokenSet ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-red-500/10 border-red-500/30'} flex-1 flex flex-col justify-center`}>
-             <div className="flex justify-between items-center">
-               <h3 className={`font-mono text-lg ${status?.botTokenSet ? 'text-emerald-400' : 'text-red-400'}`}>
-                 {status?.botTokenSet ? 'Token Set' : 'Missing Token'}
+          <div className={`p-5 rounded-2xl border ${status?.botTokenSet ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-red-500/10 border-red-500/30'} flex-1 flex flex-col justify-between overflow-hidden shadow-inner`}>
+             <div>
+               <h3 className={`font-mono text-lg font-bold mb-1 ${status?.botTokenSet ? 'text-emerald-400' : 'text-red-400'}`}>
+                 {status?.botTokenSet ? 'CONFIGURED' : 'UNCONFIGURED'}
                </h3>
-               {status?.botTokenSet && (
-                 <button
-                   onClick={async () => {
-                     try {
-                       const res = await fetch("/api/set-webhook");
-                       const text = await res.text();
-                       alert(text);
-                     } catch (e) {
-                       alert("Failed to sync webhook");
-                     }
-                   }}
-                   className="text-[10px] uppercase font-bold bg-slate-800 text-sky-400 border border-slate-700 px-2 py-1 rounded hover:bg-slate-700 transition"
-                 >
-                   Sync Webhook
-                 </button>
-               )}
+               <p className="text-[10px] text-slate-400 font-mono flex items-center gap-1.5 mb-4">
+                 <Activity className="w-3 h-3 text-sky-400" />
+                 Mode: {status?.isProd ? 'Production' : 'Development'}
+               </p>
              </div>
-             <p className={`text-xs mt-2 ${status?.botTokenSet ? 'text-emerald-500/70' : 'text-red-500/70'}`}>
-               {status?.botTokenSet 
-                  ? 'Bot is running. If deployed to Vercel, click Sync Webhook to bind.' 
-                  : 'Add TELEGRAM_BOT_TOKEN to Secrets.'}
-             </p>
+
+             <div className="space-y-2">
+                {status?.isProd && (
+                  <button 
+                    onClick={setWebhook}
+                    disabled={isResetting}
+                    className="w-full bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white text-xs font-bold py-2.5 rounded-xl transition-all shadow-lg shadow-sky-900/20 flex items-center justify-center gap-2"
+                  >
+                    {isResetting ? 'Processing...' : (
+                      <>
+                        <QrCode className="w-3 h-3" />
+                        Set Webhook
+                      </>
+                    )}
+                  </button>
+                )}
+                <button 
+                  onClick={resetBot}
+                  disabled={isResetting}
+                  className="w-full bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-300 text-xs font-bold py-2.5 rounded-xl transition-all border border-slate-700 flex items-center justify-center gap-2"
+                >
+                  {status?.isProd ? 'Reset Webhook' : 'Reset Polling'}
+                </button>
+                {webhookResult && (
+                  <div className="p-2 bg-black/40 rounded-lg">
+                    <p className="text-[9px] font-mono text-emerald-400 break-all leading-tight">
+                      {webhookResult}
+                    </p>
+                  </div>
+                )}
+             </div>
           </div>
         </div>
 
@@ -217,12 +243,15 @@ export default function App() {
 
         {/* Recent Activity Panel */}
         <div className="md:col-span-12 bg-slate-900 border border-slate-800 rounded-3xl p-8 flex flex-col">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-lg font-semibold flex items-center gap-2 text-white">
-              <Activity className="w-5 h-5 text-emerald-400" />
-              Recent Activity
-            </h2>
-            <div className="flex items-center gap-2">
+          <div className="flex flex-col sm:flex-row justify-between sm:items-center mb-6 gap-2">
+            <div>
+              <h2 className="text-lg font-semibold flex items-center gap-2 text-white">
+                <Activity className="w-5 h-5 text-emerald-400" />
+                Recent Activity
+              </h2>
+              <p className="text-xs text-slate-500 mt-1 italic">Note: Logs are ephemeral in Serverless/Vercel and reset on cold starts.</p>
+            </div>
+            <div className="flex items-center gap-2 self-start sm:self-center">
               <button 
                 onClick={resetBot}
                 disabled={isResetting}
