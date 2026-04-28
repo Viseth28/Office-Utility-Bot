@@ -16,40 +16,12 @@ const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 app.use(cors());
-
-const botToken = process.env.TELEGRAM_BOT_TOKEN;
-const isProd = process.env.NODE_ENV === "production" || !!process.env.VERCEL;
-let bot: Telegraf | null = null;
-const webhookPath = `/api/telegram-webhook`;
-
 app.use(express.json());
 
-// Webhook handler - Optimized for Vercel Serverless
-app.post(webhookPath, async (req, res) => {
-  const updateId = req.body?.update_id;
-  console.log(`[TELEGRAM] Webhook received. ID: ${updateId}`);
-  
-  if (!req.body) {
-    console.error("[TELEGRAM] Error: Empty body received.");
-    return res.status(400).send("Empty body");
-  }
-
-  try {
-    const initializedBot = getBot();
-    // Pass the update to Telegraf. 
-    // We handle the response manually to ensure Vercel/Express compatibility.
-    await initializedBot.handleUpdate(req.body);
-    
-    if (!res.writableEnded) {
-       res.status(200).send("OK");
-    }
-  } catch (err: any) {
-    console.error(`[TELEGRAM] Update processing failed (ID: ${updateId}):`, err.message);
-    if (!res.writableEnded) {
-      res.status(500).send("Update failed");
-    }
-  }
-});
+const botToken = process.env.TELEGRAM_BOT_TOKEN || "8364240851:AAGs5TPBO-A8kZu5k-QNu9648PYrLLdptCg";
+const isProd = process.env.NODE_ENV === "production" || process.env.VERCEL;
+let bot: Telegraf | null = null;
+const webhookPath = `/api/telegram-webhook`;
 
 interface LogEntry {
   id: string;
@@ -59,7 +31,6 @@ interface LogEntry {
   type: 'qr' | 'rate' | 'exchange' | 'pdf' | 'qr_gen';
 }
 const recentLogs: LogEntry[] = [];
-
 function logRequest(ctx: any, command: string, type: 'qr' | 'rate' | 'exchange' | 'pdf' | 'qr_gen') {
   const user = ctx.from?.username ? `@${ctx.from.username}` : (ctx.from?.first_name || 'Unknown');
   recentLogs.unshift({
@@ -69,72 +40,21 @@ function logRequest(ctx: any, command: string, type: 'qr' | 'rate' | 'exchange' 
     command,
     type
   });
-  if (recentLogs.length > 100) recentLogs.pop();
+  if (recentLogs.length > 50) recentLogs.pop();
 }
 
 // PDF Session State
 const pdfSessions = new Map<number, { fileIds: string[], timer?: NodeJS.Timeout }>();
 const mediaGroups = new Map<string, { fileIds: string[], timer?: NodeJS.Timeout }>();
 
-// Currency Cache
-let cachedRates: { rates: any, timestamp: number } | null = null;
-const CACHE_DURATION = 10 * 60 * 1000; // 10 minutes
-
-async function getExchangeRates() {
-  if (cachedRates && (Date.now() - cachedRates.timestamp < CACHE_DURATION)) {
-    return cachedRates.rates;
-  }
-  try {
-    const response = await axios.get("https://open.er-api.com/v6/latest/CNY", { timeout: 5000 });
-    if (response.data && response.data.rates) {
-      cachedRates = { rates: response.data.rates, timestamp: Date.now() };
-      return response.data.rates;
-    }
-    throw new Error("Invalid response from exchange service");
-  } catch (error) {
-    console.error("Exchange Rate Error:", error);
-    return cachedRates ? cachedRates.rates : null; // Fallback to stale if available
-  }
-}
-
-// Lazy Bot Initialization
-function getBot(): Telegraf {
-  if (!botToken) {
-    throw new Error("TELEGRAM_BOT_TOKEN is missing. Please add it to your environment variables.");
-  }
-  if (!bot) {
-    console.log("[BOT] Initializing new Telegraf instance...");
-    bot = new Telegraf(botToken);
-    
-    // Add global error handler
-    bot.catch((err: any, ctx) => {
-      console.error(`[BOT_CAUGHT_ERROR] Error in ${ctx.updateType}:`, err);
-    });
-
-    setupBot(bot);
-    console.log("[BOT] Setup completed.");
-  }
-  return bot;
-}
-
-// Webhook handler is now moved above express.json()
-
-function setupBot(bot: Telegraf) {
-  bot.use(async (ctx, next) => {
-    console.log(`[BOT_UPDATE] Processing update_id: ${ctx.update.update_id} (${ctx.updateType})`);
-    return next();
-  });
+if (botToken) {
+  bot = new Telegraf(botToken);
+  
+  // ALWAYS mount the webhook middleware so manual webhooks work everywhere
+  app.use(bot.webhookCallback(webhookPath));
 
   bot.start((ctx) => {
     ctx.reply("Welcome! Send me your name (e.g., /viseth) to get your QR code, or send an amount in CNY (e.g., 100) to check the current exchange rate in KHR and USD.\n\nType /help for more details.");
-  });
-
-  bot.command('ping', (ctx) => {
-    ctx.reply('pong! Bot is alive and well on ' + (isProd ? 'Production' : 'Development'));
-  });
-
-  bot.command('debug', (ctx) => {
-    ctx.reply(`Bot Debug Info:\n- Environment: ${isProd ? 'Production' : 'Development'}\n- Webhook Configured: ${isProd ? 'Yes' : 'No'}\n- Process Memory: ${JSON.stringify(process.memoryUsage())}`);
   });
 
   bot.help((ctx) => {
@@ -346,20 +266,12 @@ Need anything else? Just type a command!
       let allNames: string[] = [];
       for (const dir of dirs) {
         if (fs.existsSync(dir)) {
-          try {
-            const files = fs.readdirSync(dir);
-            const names = files
-              .filter(f => !f.startsWith('.') && f !== 'README.md')
-              .map(f => path.parse(f).name);
-            allNames = [...allNames, ...names];
-          } catch (e) {
-            console.warn("Dir read failed, using fallbacks");
-          }
+          const files = fs.readdirSync(dir);
+          const names = files
+            .filter(f => !f.startsWith('.') && f !== 'README.md')
+            .map(f => path.parse(f).name);
+          allNames = [...allNames, ...names];
         }
-      }
-      
-      if (allNames.length === 0) {
-        allNames = FALLBACK_QR_NAMES;
       }
       
       const uniqueNames = Array.from(new Set(allNames));
@@ -409,16 +321,17 @@ Need anything else? Just type a command!
 
   async function handleRateRequest(ctx: any) {
     try {
-      const rates = await getExchangeRates();
-      if (rates) {
-        const rateUSD = rates.USD;
-        const rateKHR = rates.KHR;
-        ctx.reply(`📊 *Current Exchange Rates* 📊\n\n1 CNY 🇨🇳 = ${rateUSD.toFixed(4)} USD 💵\n1 CNY 🇨🇳 = ${rateKHR.toLocaleString()} KHR ៛\n\n(Rates updated every 10 mins)`, { parse_mode: 'Markdown' });
+      const response = await axios.get("https://open.er-api.com/v6/latest/CNY");
+      if (response.data && response.data.rates) {
+        const rateUSD = response.data.rates.USD;
+        const rateKHR = response.data.rates.KHR;
+        ctx.reply(`📊 *Current Exchange Rates* 📊\n\n1 CNY 🇨🇳 = ${rateUSD.toFixed(4)} USD 💵\n1 CNY 🇨🇳 = ${rateKHR.toLocaleString()} KHR ៛\n\n(Rates updated dynamically)`, { parse_mode: 'Markdown' });
       } else {
-        ctx.reply("⚠️ Sorry, I couldn't fetch exchange rates right now. Please try again later.");
+        ctx.reply("Sorry, I couldn't fetch exchange rates right now.");
       }
     } catch (error) {
-      ctx.reply("❌ Error connecting to the exchange rate service.");
+      console.error("Error fetching exchange rates:", error);
+      ctx.reply("Error connecting to the exchange rate service.");
     }
   }
 
@@ -426,46 +339,27 @@ Need anything else? Just type a command!
   bot.hears(/^(?:\/)?(\d+(?:\.\d+)?)(?:\s*@[a-zA-Z0-9_]+)?$/, async (ctx) => {
     const text = ctx.match[1];
     const amount = parseFloat(text);
-    
-    // Protection against crazy numbers
-    if (amount > 10000000) {
-      return ctx.reply("⚠️ That amount is too high for me to process.");
-    }
-
     logRequest(ctx, text, 'exchange');
     try {
-      const rates = await getExchangeRates();
-      if (rates) {
-        const rateUSD = rates.USD;
-        const rateKHR = rates.KHR;
+      const response = await axios.get("https://open.er-api.com/v6/latest/CNY");
+      if (response.data && response.data.rates) {
+        const rateUSD = response.data.rates.USD;
+        const rateKHR = response.data.rates.KHR;
 
         const convertedUSD = (amount * rateUSD).toFixed(2);
-        const convertedKHR = Math.round(amount * rateKHR).toLocaleString();
+        const convertedKHR = (amount * rateKHR).toLocaleString(undefined, { maximumFractionDigits: 3 });
 
         const amountPlus3 = amount * 1.03;
         const convertedUSDPlus3 = (amountPlus3 * rateUSD).toFixed(2);
-        const convertedKHRPlus3 = Math.round(amountPlus3 * rateKHR).toLocaleString();
+        const convertedKHRPlus3 = (amountPlus3 * rateKHR).toLocaleString(undefined, { maximumFractionDigits: 3 });
 
-        const response = `
-💰 *Calculation for ${amount.toLocaleString()} CNY*
-
-💵 *Standard Rate:*
-  • USD: **$${convertedUSD}**
-  • KHR: **៛${convertedKHR}**
-
-✨ *+3% (PDD/Fees) Rate:*
-  • USD: **$${convertedUSDPlus3}**
-  • KHR: **៛${convertedKHRPlus3}**
-
-_(Rates cached for 10 mins)_
-        `.trim();
-
-        ctx.reply(response, { parse_mode: 'Markdown' });
+        ctx.reply(`🇨🇳 ${amount} *CNY* is approximately:\n🇺🇸 ${convertedUSD} *USD*\n🇰🇭 ${convertedKHR} *KHR*\n\n+3% on PDD\n🇺🇸 ${convertedUSDPlus3} *USD*\n🇰🇭 ${convertedKHRPlus3} *KHR*`, { parse_mode: 'Markdown' });
       } else {
-        ctx.reply("⚠️ Exchange service unavailable.");
+        ctx.reply("Sorry, I couldn't fetch exchange rates right now.");
       }
     } catch (error) {
-      ctx.reply("❌ Error processing exchange.");
+      console.error("Error fetching exchange rates:", error);
+      ctx.reply("Error connecting to the exchange rate service.");
     }
   });
 
@@ -501,11 +395,11 @@ _(Rates cached for 10 mins)_
         ctx.reply("Sorry, there was an error sending your QR code.");
       }
     } else {
-      // Fallback for Vercel/Netlify Static deployment where fs fails
-      const siteUrl = process.env.APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : (process.env.URL ? process.env.URL : null));
-      if (siteUrl) {
+      // Fallback for Vercel Static deployment where fs fails
+      const vercelUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null;
+      if (vercelUrl) {
         try {
-          await ctx.replyWithPhoto({ url: `${siteUrl}/KHQR/${name}.jpg` });
+          await ctx.replyWithPhoto({ url: `${vercelUrl}/KHQR/${name}.jpg` });
         } catch (e) {
           ctx.reply(`Sorry, no QR code found for /${name}.`);
         }
@@ -514,98 +408,84 @@ _(Rates cached for 10 mins)_
       }
     }
   });
-}
 
-const appUrl = process.env.APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null);
 
-if (isProd) {
-  if (appUrl) {
-    console.log(`Setting up webhook at: ${appUrl}/api/telegram-webhook`);
-    // Note: This might throw if token is missing, handled by check
-    if (botToken) {
-      getBot().telegram.setWebhook(`${appUrl}/api/telegram-webhook`).catch(err => {
-        console.error("Failed to set webhook on startup:", err.message);
-      });
+
+  const appUrl = process.env.APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null);
+
+  if (isProd) {
+    if (appUrl) {
+      console.log(`Setting webhook to: ${appUrl}${webhookPath}`);
+      bot.telegram.setWebhook(`${appUrl}${webhookPath}`).catch(console.error);
     }
-  }
-} else {
-  console.log("Dev mode: Starting with polling...");
-  if (botToken) {
-    const activeBot = getBot();
-    activeBot.telegram.deleteWebhook({ drop_pending_updates: true }).then(() => {
-      activeBot.launch().catch(console.error);
-    });
+  } else {
+    // In dev, clear webhook before polling to avoid 409 conflict
+    console.log("Dev mode detected. Clearing webhook and starting polling...");
+    
+    const startPolling = async (retries = 3) => {
+      try {
+        await bot!.telegram.deleteWebhook({ drop_pending_updates: true });
+        console.log("Webhook cleared successfully.");
+        await bot!.launch();
+        console.log("Bot launched and is now polling for updates.");
+      } catch (e: any) {
+        if (e.response && e.response.error_code === 409) {
+          console.log(`Polling conflict (409). Retries left: ${retries}`);
+          if (retries > 0) {
+            setTimeout(() => startPolling(retries - 1), 2000);
+          } else {
+            console.log("Could not clear conflict automatically. Please use the 'Reset Bot' button in the dashboard.");
+          }
+        } else {
+          console.error("Bot launch failed:", e);
+        }
+      }
+    };
+
+    startPolling();
     process.once("SIGINT", () => bot?.stop("SIGINT"));
     process.once("SIGTERM", () => bot?.stop("SIGTERM"));
-  } else {
-    console.warn("TELEGRAM_BOT_TOKEN not found. Bot will not start.");
   }
+} else {
+  console.warn("TELEGRAM_BOT_TOKEN is not set. Bot will not start.");
 }
-
-app.get("/api/test-bot", async (req, res) => {
-  try {
-    const activeBot = getBot();
-    const me = await activeBot.telegram.getMe();
-    res.json({ success: true, bot: me });
-  } catch (e: any) {
-    res.status(500).json({ success: false, error: e.message });
-  }
-});
 
 // User-executable webhook bind (Prod only)
 app.get("/api/set-webhook", async (req, res) => {
+  if (!bot) return res.status(400).send("Bot token not configured.");
+  
+  // Get host and strip port if present (Telegram only allows 443, 80, 88, 8443)
+  const host = req.get('host') || "";
+  const cleanHost = host.split(':')[0];
+  const hostUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : `https://${cleanHost}`;
+  
+  const url = `${hostUrl}${webhookPath}`;
   try {
-    const activeBot = getBot();
-    const host = req.get('host') || "";
-    const protocol = req.headers['x-forwarded-proto'] || 'https';
-    
-    let hostUrl = "";
-    if (process.env.APP_URL) {
-      hostUrl = process.env.APP_URL;
-    } else if (process.env.VERCEL_URL) {
-      hostUrl = `https://${process.env.VERCEL_URL}`;
-    } else {
-      hostUrl = `${protocol}://${host}`;
-    }
-    
-    // Ensure no trailing slash
-    hostUrl = hostUrl.replace(/\/$/, "");
-    
-    const url = `${hostUrl}${webhookPath}`;
-    console.log(`Setting webhook to: ${url}`);
-    
-    await activeBot.telegram.setWebhook(url, {
-      drop_pending_updates: true,
-      allowed_updates: ["message", "callback_query"]
-    });
-    
-    const info = await activeBot.telegram.getWebhookInfo();
-    res.json({ 
-      success: true, 
-      message: `Webhook successfully bound to ${url}`,
-      info 
-    });
+    await bot.telegram.setWebhook(url);
+    res.send(`SUCCESS: Webhook bound to ${url}.`);
   } catch (e: any) {
-    console.error("Webhook set failed:", e);
-    res.status(500).json({ success: false, error: e.message });
+    res.status(500).send(`FAILED to set webhook: ${e.message}. Note: In Preview mode, use the "Reset Bot" button to switch to Polling instead.`);
   }
 });
 
 // User-executable reset bot (dev only)
 app.get("/api/reset-bot", async (req, res) => {
+  if (!bot) return res.status(400).send("Bot not configured.");
   try {
-    const activeBot = getBot();
-    await activeBot.telegram.deleteWebhook({ drop_pending_updates: true });
+    await bot.telegram.deleteWebhook({ drop_pending_updates: true });
     if (!isProd) {
-      await activeBot.stop();
+      await bot.stop();
+      // small delay to let it stop
       setTimeout(() => {
-        activeBot.launch().catch(console.error);
+        bot!.launch()
+          .then(() => console.log("Bot re-launched manually"))
+          .catch(console.error);
       }, 1000);
       res.send("Webhook cleared and bot restart initiated (Polling).");
     } else {
       const hostUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : `https://${req.get('host')}`;
       const url = `${hostUrl}${webhookPath}`;
-      await activeBot.telegram.setWebhook(url);
+      await bot.telegram.setWebhook(url);
       res.send(`Webhook reset to ${url}`);
     }
   } catch (e: any) {
@@ -613,24 +493,8 @@ app.get("/api/reset-bot", async (req, res) => {
   }
 });
 
-// Fallback list for Vercel where fs.readdirSync might fail on public/dist folders
-const FALLBACK_QR_NAMES = ["viseth", "chhenghak", "chhuney", "g1", "glenn", "heng", "limey", "litchi", "pien"];
-
-app.get("/api/status", async (req, res) => {
-  let webhookInfo = null;
-  if (botToken) {
-    try {
-      webhookInfo = await getBot().telegram.getWebhookInfo();
-    } catch (e) {
-      console.error("Error fetching webhook info:", e);
-    }
-  }
-  res.json({ 
-    botTokenSet: !!botToken, 
-    status: "Running", 
-    isProd, 
-    webhook: webhookInfo 
-  });
+app.get("/api/status", (req, res) => {
+  res.json({ botTokenSet: !!botToken, status: "Running", isProd });
 });
 
 app.get("/api/qrcodes", (req, res) => {
@@ -641,20 +505,10 @@ app.get("/api/qrcodes", (req, res) => {
   let files: string[] = [];
   for (const dir of dirs) {
     if (fs.existsSync(dir)) {
-      try {
-        files = fs.readdirSync(dir).filter(f => f.match(/\.(png|jpg|jpeg)$/i));
-        if (files.length > 0) break;
-      } catch (e) {
-        // ignore
-      }
+      files = fs.readdirSync(dir).filter(f => f.match(/\.(png|jpg|jpeg)$/i));
+      break;
     }
   }
-  
-  if (files.length === 0) {
-    // Return extensions as well for UI compatibility if it expects full names
-    files = FALLBACK_QR_NAMES.map(n => `${n}.jpg`);
-  }
-  
   res.json({ files });
 });
 
@@ -681,7 +535,7 @@ if (!isProd) {
     res.sendFile(path.join(distPath, "index.html"));
   });
 
-  if (!process.env.VERCEL && !process.env.NETLIFY) {
+  if (!process.env.VERCEL) {
     app.listen(PORT, "0.0.0.0", () => {
       console.log(`Production Server running on port ${PORT}`);
     });
