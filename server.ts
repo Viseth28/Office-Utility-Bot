@@ -18,7 +18,7 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 app.use(cors());
 app.use(express.json());
 
-const botToken = process.env.TELEGRAM_BOT_TOKEN || "8364240851:AAGs5TPBO-A8kZu5k-QNu9648PYrLLdptCg";
+const botToken = process.env.TELEGRAM_BOT_TOKEN;
 const isProd = process.env.NODE_ENV === "production" || process.env.VERCEL;
 let bot: Telegraf | null = null;
 const webhookPath = `/api/telegram-webhook`;
@@ -50,8 +50,8 @@ const mediaGroups = new Map<string, { fileIds: string[], timer?: NodeJS.Timeout 
 if (botToken) {
   bot = new Telegraf(botToken);
   
-  // ALWAYS mount the webhook middleware so manual webhooks work everywhere
-  app.use(bot.webhookCallback(webhookPath));
+  // Mount webhook handler specifically for POST requests to the webhook path
+  app.post(webhookPath, bot.webhookCallback(webhookPath));
 
   bot.start((ctx) => {
     ctx.reply("Welcome! Send me your name (e.g., /viseth) to get your QR code, or send an amount in CNY (e.g., 100) to check the current exchange rate in KHR and USD.\n\nType /help for more details.");
@@ -415,8 +415,13 @@ Need anything else? Just type a command!
 
   if (isProd) {
     if (appUrl) {
-      console.log(`Setting webhook to: ${appUrl}${webhookPath}`);
-      bot.telegram.setWebhook(`${appUrl}${webhookPath}`).catch(console.error);
+      const webhookUrl = `${appUrl}${webhookPath}`;
+      console.log(`[BOT] Setting webhook to: ${webhookUrl}`);
+      bot.telegram.setWebhook(webhookUrl)
+        .then(() => console.log(`[BOT] Webhook successfully set to: ${webhookUrl}`))
+        .catch(error => console.error(`[BOT] Failed to set webhook: ${error.message}`));
+    } else {
+      console.error("[BOT] ERROR: APP_URL and VERCEL_URL are both undefined. Bot webhook cannot be configured!");
     }
   } else {
     // In dev, clear webhook before polling to avoid 409 conflict
