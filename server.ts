@@ -26,7 +26,26 @@ if (botToken) {
   bot = new Telegraf(botToken);
 
   bot.start((ctx) => {
-    ctx.reply("Welcome! Send me your name (e.g., /viseth) to get your QR code, or send an amount in CNY (e.g., 100) to check the current exchange rate in KHR and USD.");
+    ctx.reply("Welcome! Send me your name (e.g., /viseth) to get your QR code, or send an amount in CNY (e.g., 100) to check the current exchange rate in KHR and USD.\n\nType /help for more details.");
+  });
+
+  bot.help((ctx) => {
+    const helpMessage = `
+🤖 *Telegram Utility Bot Help* 🤖
+
+Here are the features you can use:
+
+📸 *1. QR Code Retrieval*
+Send a slash \`/\` followed by a registered name to get their KHQR code.
+*Example:* \`/viseth\`
+
+💱 *2. Currency Conversion (CNY ➡️ USD & KHR)*
+Send any number to fetch live exchange rates and convert it from Chinese Yuan (CNY) to US Dollars (USD) and Cambodian Riel (KHR).
+*Example:* \`102\`
+
+Need anything else? Just type a command!
+    `;
+    ctx.replyWithMarkdown(helpMessage);
   });
 
   bot.hears(/^\/([a-zA-Z0-9_\-]+)$/, async (ctx) => {
