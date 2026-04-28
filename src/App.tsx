@@ -23,18 +23,18 @@ export default function App() {
     fetch("/api/status")
       .then((res) => res.json())
       .then((data) => setStatus(data))
-      .catch((err) => console.error(err));
+      .catch(() => {});
 
     fetch("/api/qrcodes")
       .then((res) => res.json())
       .then((data) => setQrCodes(data.files || []))
-      .catch((err) => console.error(err));
+      .catch(() => {});
 
     const fetchLogs = () => {
       fetch("/api/logs")
         .then((res) => res.json())
         .then((data) => setLogs(data.logs || []))
-        .catch((err) => console.error(err));
+        .catch(() => {});
     };
     fetchLogs();
     const interval = setInterval(fetchLogs, 3000);
