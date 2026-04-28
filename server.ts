@@ -91,6 +91,33 @@ Need anything else? Just type a command!
     }
   });
 
+  bot.hears(/^(?:\/)?(\d+(?:\.\d+)?)(?:@[a-zA-Z0-9_]+)?$/, async (ctx) => {
+    const text = ctx.match[1];
+    const amount = parseFloat(text);
+    logRequest(ctx, ctx.match[0], 'exchange');
+    try {
+      const response = await axios.get("https://open.er-api.com/v6/latest/CNY");
+      if (response.data && response.data.rates) {
+        const rateUSD = response.data.rates.USD;
+        const rateKHR = response.data.rates.KHR;
+
+        const convertedUSD = (amount * rateUSD).toFixed(2);
+        const convertedKHR = (amount * rateKHR).toLocaleString(undefined, { maximumFractionDigits: 3 });
+
+        const amountPlus3 = amount * 1.03;
+        const convertedUSDPlus3 = (amountPlus3 * rateUSD).toFixed(2);
+        const convertedKHRPlus3 = (amountPlus3 * rateKHR).toLocaleString(undefined, { maximumFractionDigits: 3 });
+
+        ctx.reply(`🇨🇳 ${amount} *CNY* is approximately:\n🇺🇸 ${convertedUSD} *USD*\n🇰🇭 ${convertedKHR} *KHR*\n\n+3% on PDD\n🇺🇸 ${convertedUSDPlus3} *USD*\n🇰🇭 ${convertedKHRPlus3} *KHR*`, { parse_mode: 'Markdown' });
+      } else {
+        ctx.reply("Sorry, I couldn't fetch exchange rates right now.");
+      }
+    } catch (error) {
+      console.error("Error fetching exchange rates:", error);
+      ctx.reply("Error connecting to the exchange rate service.");
+    }
+  });
+
   bot.hears(/^\/([a-zA-Z0-9_\-]+)(?:@[a-zA-Z0-9_]+)?$/, async (ctx) => {
     const name = ctx.match[1].toLowerCase();
     logRequest(ctx, `/${name}`, 'qr');
@@ -136,35 +163,7 @@ Need anything else? Just type a command!
     }
   });
 
-  bot.on("text", async (ctx) => {
-    const text = ctx.message.text.trim();
-    const amount = parseFloat(text);
 
-    if (!isNaN(amount) && text.match(/^\d+(\.\d+)?$/)) {
-      logRequest(ctx, text, 'exchange');
-      try {
-        const response = await axios.get("https://open.er-api.com/v6/latest/CNY");
-        if (response.data && response.data.rates) {
-          const rateUSD = response.data.rates.USD;
-          const rateKHR = response.data.rates.KHR;
-
-          const convertedUSD = (amount * rateUSD).toFixed(2);
-          const convertedKHR = (amount * rateKHR).toLocaleString(undefined, { maximumFractionDigits: 3 });
-
-          const amountPlus3 = amount * 1.03;
-          const convertedUSDPlus3 = (amountPlus3 * rateUSD).toFixed(2);
-          const convertedKHRPlus3 = (amountPlus3 * rateKHR).toLocaleString(undefined, { maximumFractionDigits: 3 });
-
-          ctx.reply(`🇨🇳 ${amount} *CNY* is approximately:\n🇺🇸 ${convertedUSD} *USD*\n🇰🇭 ${convertedKHR} *KHR*\n\n+3% on PDD\n🇺🇸 ${convertedUSDPlus3} *USD*\n🇰🇭 ${convertedKHRPlus3} *KHR*`, { parse_mode: 'Markdown' });
-        } else {
-          ctx.reply("Sorry, I couldn't fetch exchange rates right now.");
-        }
-      } catch (error) {
-        console.error("Error fetching exchange rates:", error);
-        ctx.reply("Error connecting to the exchange rate service.");
-      }
-    }
-  });
 
   const appUrl = process.env.APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null);
 
