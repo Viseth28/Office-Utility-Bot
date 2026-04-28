@@ -48,16 +48,37 @@ const pdfSessions = new Map<number, { fileIds: string[], timer?: NodeJS.Timeout 
 const mediaGroups = new Map<string, { fileIds: string[], timer?: NodeJS.Timeout }>();
 
 if (botToken) {
+  console.log(`[BOT] Initializing bot with token: ${botToken.substring(0, 10)}...`);
   bot = new Telegraf(botToken);
   
-  // Mount webhook handler specifically for POST requests to the webhook path
-  app.post(webhookPath, bot.webhookCallback(webhookPath));
+  // Mount webhook handler for Telegram updates - use handleUpdate for better Vercel compatibility
+  app.post(webhookPath, (req, res) => {
+    console.log(`[WEBHOOK] Received POST to ${webhookPath}`);
+    console.log(`[WEBHOOK] Update object:`, JSON.stringify(req.body, null, 2).substring(0, 500));
+    
+    bot!.handleUpdate(req.body, res).catch((error: any) => {
+      console.error(`[WEBHOOK] Error handling update:`, error);
+      res.status(200).send('ok'); // Always return 200 to Telegram even on error
+    });
+  });
+
+  // Add catch-all handlers and middleware for debugging (must be before command handlers)
+  bot.catch((err: any, ctx: any) => {
+    console.error(`[BOT] Catch error for user ${ctx.from?.id}:`, err);
+  });
+
+  bot.use((ctx: any, next: any) => {
+    console.log(`[BOT] Update received - Type: ${ctx.updateType}, From: ${ctx.from?.id}, Text: ${(ctx.message?.text || '').substring(0, 50)}`);
+    return next();
+  });
 
   bot.start((ctx) => {
+    console.log(`[BOT] /start command received from user ${ctx.from?.id}`);
     ctx.reply("Welcome! Send me your name (e.g., /viseth) to get your QR code, or send an amount in CNY (e.g., 100) to check the current exchange rate in KHR and USD.\n\nType /help for more details.");
   });
 
   bot.help((ctx) => {
+    console.log(`[BOT] /help command received from user ${ctx.from?.id}`);
     const helpMessage = `
 🤖 *Telegram Utility Bot Help* 🤖
 
@@ -409,19 +430,33 @@ Need anything else? Just type a command!
     }
   });
 
-
-
   const appUrl = process.env.APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null);
 
   if (isProd) {
     if (appUrl) {
       const webhookUrl = `${appUrl}${webhookPath}`;
-      console.log(`[BOT] Setting webhook to: ${webhookUrl}`);
+      console.log(`[BOT] Production mode detected. Setting webhook...`);
+      console.log(`[BOT] Webhook URL will be: ${webhookUrl}`);
+      
+      bot.telegram.getWebhookInfo().then((info: any) => {
+        console.log(`[BOT] Current webhook info:`, info);
+      }).catch((e: any) => {
+        console.error(`[BOT] Could not get webhook info:`, e.message);
+      });
+
       bot.telegram.setWebhook(webhookUrl)
-        .then(() => console.log(`[BOT] Webhook successfully set to: ${webhookUrl}`))
-        .catch(error => console.error(`[BOT] Failed to set webhook: ${error.message}`));
+        .then((result: any) => {
+          console.log(`[BOT] ✅ Webhook successfully set to: ${webhookUrl}`);
+          console.log(`[BOT] Telegram response:`, result);
+        })
+        .catch(error => {
+          console.error(`[BOT] ❌ Failed to set webhook: ${error.message}`);
+          console.error(`[BOT] Error details:`, error.response?.data || error);
+        });
     } else {
-      console.error("[BOT] ERROR: APP_URL and VERCEL_URL are both undefined. Bot webhook cannot be configured!");
+      console.error("[BOT] ❌ CRITICAL: APP_URL and VERCEL_URL are both undefined!");
+      console.error("[BOT] Bot webhook cannot be configured without a deployment URL!");
+      console.error("[BOT] Check that VERCEL_URL environment variable is set");
     }
   } else {
     // In dev, clear webhook before polling to avoid 409 conflict
