@@ -1,0 +1,6 @@
+{
+  "name": "Telegram Exchange & QR Bot",
+  "description": "Telegram bot for QR code retrieval and CNY exchange rates",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
