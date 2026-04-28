@@ -18,7 +18,7 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 app.use(cors());
 app.use(express.json());
 
-const botToken = process.env.TELEGRAM_BOT_TOKEN;
+const botToken = process.env.TELEGRAM_BOT_TOKEN || "8364240851:AAGs5TPBO-A8kZu5k-QNu9648PYrLLdptCg";
 const isProd = process.env.NODE_ENV === "production" || process.env.VERCEL;
 let bot: Telegraf | null = null;
 const webhookPath = `/api/telegram-webhook`;
@@ -51,8 +51,9 @@ if (botToken) {
   console.log(`[BOT] Initializing bot with token: ${botToken.substring(0, 10)}...`);
   bot = new Telegraf(botToken);
   
+
   // Mount webhook handler for Telegram updates - use handleUpdate for better Vercel compatibility
-  app.post(webhookPath, (req, res) => {
+  app.post(webhookPath, express.json(), (req, res) => {
     console.log(`[WEBHOOK] Received POST to ${webhookPath}`);
     console.log(`[WEBHOOK] Update object:`, JSON.stringify(req.body, null, 2).substring(0, 500));
     
